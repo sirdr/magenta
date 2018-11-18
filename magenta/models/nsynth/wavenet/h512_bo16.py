@@ -139,7 +139,7 @@ class FastGenerationConfig(object):
 class Config(object):
   """Configuration object that helps manage the graph."""
 
-  def __init__(self, train_path=None):
+  def __init__(self, train_path=None, sample_length=64000, problem='nsynth'):
     self.num_iters = 200000
     self.learning_rate_schedule = {
         0: 2e-4,
@@ -153,10 +153,12 @@ class Config(object):
     self.ae_hop_length = 512
     self.ae_bottleneck_width = 16
     self.train_path = train_path
+    self.sample_length = sample_length
+    self.problem=problem
 
   def get_batch(self, batch_size):
     assert self.train_path is not None
-    data_train = reader.NSynthDataset(self.train_path, is_training=True)
+    data_train = reader.NSynthDataset(self.train_path, sample_length=self.sample_length, problem=self.problem, is_training=True)
     return data_train.get_wavenet_batch(batch_size, length=6144)
 
   @staticmethod

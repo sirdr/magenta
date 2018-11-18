@@ -36,9 +36,11 @@ SPECGRAM_REGISTRY = {
 class NSynthDataset(object):
   """Dataset object to help manage the TFRecord loading."""
 
-  def __init__(self, tfrecord_path, is_training=True):
+  def __init__(self, tfrecord_path, sample_length=64000, problem='nsynth',is_training=True):
     self.is_training = is_training
     self.record_path = tfrecord_path
+    self.sample_length = sample_length
+    self.problem = problem
 
   def get_example(self, batch_size):
     """Get a single example from the tfrecord file.
@@ -58,15 +60,21 @@ class NSynthDataset(object):
         shuffle=self.is_training,
         capacity=capacity)
     unused_key, serialized_example = reader.read(path_queue)
-    features = {
-        "note_str": tf.FixedLenFeature([], dtype=tf.string),
-        "pitch": tf.FixedLenFeature([1], dtype=tf.int64),
-        "velocity": tf.FixedLenFeature([1], dtype=tf.int64),
-        "audio": tf.FixedLenFeature([64000], dtype=tf.float32),
-        "qualities": tf.FixedLenFeature([10], dtype=tf.int64),
-        "instrument_source": tf.FixedLenFeature([1], dtype=tf.int64),
-        "instrument_family": tf.FixedLenFeature([1], dtype=tf.int64),
-    }
+    if self.problem=='nsynth':
+      features = {
+          "note_str": tf.FixedLenFeature([], dtype=tf.string),
+          "pitch": tf.FixedLenFeature([1], dtype=tf.int64),
+          "velocity": tf.FixedLenFeature([1], dtype=tf.int64),
+          "audio": tf.FixedLenFeature([self.sample_length], dtype=tf.float32),
+          "qualities": tf.FixedLenFeature([10], dtype=tf.int64),
+          "instrument_source": tf.FixedLenFeature([1], dtype=tf.int64),
+          "instrument_family": tf.FixedLenFeature([1], dtype=tf.int64),
+      }
+    elif self.problem=='dx7':
+      features = {
+          "audio": tf.FixedLenFeature([self.sample_length], dtype=tf.float32),
+      }
+
     example = tf.parse_single_example(serialized_example, features)
     return example
 
@@ -80,37 +88,62 @@ class NSynthDataset(object):
     Returns:
       A dict of key:tensor pairs. This includes "pitch", "wav", and "key".
     """
+    length = min(length, self.sample_length)
     example = self.get_example(batch_size)
     wav = example["audio"]
-    wav = tf.slice(wav, [0], [64000])
-    pitch = tf.squeeze(example["pitch"])
-    key = tf.squeeze(example["note_str"])
+    wav = tf.slice(wav, [0], [self.sample_length])
+    if self.problem=='nsynth':
+      pitch = tf.squeeze(example["pitch"])
+      key = tf.squeeze(example["note_str"])
 
     if self.is_training:
       # random crop
       crop = tf.random_crop(wav, [length])
       crop = tf.reshape(crop, [1, length])
-      key, crop, pitch = tf.train.shuffle_batch(
-          [key, crop, pitch],
-          batch_size,
-          num_threads=4,
-          capacity=500 * batch_size,
-          min_after_dequeue=200 * batch_size)
+      if self.problem=='nsynth':
+        key, crop, pitch = tf.train.shuffle_batch(
+            [key, crop, pitch],
+            batch_size,
+            num_threads=4,
+            capacity=500 * batch_size,
+            min_after_dequeue=200 * batch_size)
+      elif self.problem=='dx7':
+        crop= tf.train.shuffle_batch(
+            [crop],
+            batch_size,
+            num_threads=4,
+            capacity=500 * batch_size,
+            min_after_dequeue=200 * batch_size)
     else:
       # fixed center crop
-      offset = (64000 - length) // 2  # 24320
+      offset = (self.sample_length - length) // 2  # 24320
       crop = tf.slice(wav, [offset], [length])
       crop = tf.reshape(crop, [1, length])
-      key, crop, pitch = tf.train.shuffle_batch(
-          [key, crop, pitch],
-          batch_size,
-          num_threads=4,
-          capacity=500 * batch_size,
-          min_after_dequeue=200 * batch_size)
+      if self.problem=='nsynth':
+        key, crop, pitch = tf.train.shuffle_batch(
+            [key, crop, pitch],
+            batch_size,
+            num_threads=4,
+            capacity=500 * batch_size,
+            min_after_dequeue=200 * batch_size)
+      elif self.problem=='dx7':
+        crop= tf.train.shuffle_batch(
+            [crop],
+            batch_size,
+            num_threads=4,
+            capacity=500 * batch_size,
+            min_after_dequeue=200 * batch_size)
 
     crop = tf.reshape(tf.cast(crop, tf.float32), [batch_size, length])
-    pitch = tf.cast(pitch, tf.int32)
-    return {"pitch": pitch, "wav": crop, "key": key}
+    if self.problem=='nsynth':
+      pitch = tf.cast(pitch, tf.int32)
+      return {"pitch": pitch, "wav": crop, "key": key}
+    elif self.problem=='dx7':
+      return {"wav": crop}
+    else:
+      pitch = tf.cast(pitch, tf.int32)
+      return {"pitch": pitch, "wav": crop, "key": key}
+
 
   def get_baseline_batch(self, hparams):
     """Get the Tensor expressions from the reader.

@@ -41,8 +41,12 @@ tf.app.flags.DEFINE_integer("ps_tasks", 0,
 tf.app.flags.DEFINE_integer("total_batch_size", 1,
                             "Batch size spread across all sync replicas."
                             "We use a size of 32.")
+tf.app.flags.DEFINE_integer("sample_length", 64000,
+                            "Raw sample length of input.")
 tf.app.flags.DEFINE_string("logdir", "/tmp/nsynth",
                            "The log directory for this experiment.")
+tf.app.flags.DEFINE_string("problem", "nsynth",
+                           "Which problem setup (i.e. dataset) to use")
 tf.app.flags.DEFINE_string("train_path", "", "The path to the train tfrecord.")
 tf.app.flags.DEFINE_string("log", "INFO",
                            "The threshold for what messages will be logged."
@@ -56,7 +60,7 @@ def main(unused_argv=None):
     raise RuntimeError("No config name specified.")
 
   config = utils.get_module("wavenet." + FLAGS.config).Config(
-      FLAGS.train_path)
+      FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem)
 
   logdir = FLAGS.logdir
   tf.logging.info("Saving to %s" % logdir)
