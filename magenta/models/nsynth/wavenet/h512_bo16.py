@@ -317,3 +317,213 @@ class Config(object):
         'quantized_input': x_quantized,
         'encoding': encoding,
     }
+
+class VAEConfig(Config):
+  """Configuration object that helps manage the graph."""
+
+  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', beta=1, alpha=0):
+    super(VAEConfig, self).__init__(train_path=train_path, sample_length=sample_length, problem=problem)
+    self.ae_bottleneck_width = 32 # double of deterministic ae for purposes of reparam
+
+  def _gaussian_parameters(self, h, dim=-1):
+    m, h = tf.split(h, 2, axis=dim)
+    v = tf.math.softplus(h) + 1e-8
+    return m, v
+
+  def _kl_normal(self, qm, qv, pm, pv):
+    element_wise = 0.5 * (tf.log(pv) - tf.log(qv) + (qv / pv) + (tf.square(qm - pm) / pv) - 1)
+    kl = tf.math.reduce_sum(element_wise, axis=-1)
+    return kl
+
+  def _log_normal(self, x, m, v):
+    log_prob = tf.distributions.Normal(m, torch.sqrt(v)).log_prob(x)
+    log_prob = tf.math.reduce_sum(log_prob, axis=-1)
+    return log_prob
+
+  def _sample_gaussian(self, m, v):
+    eps = tf.random.normal(tf.shape(v))
+    noise = tf.math.multiply(tf.math.sqrt(v), eps)
+    z = m + noise
+    return z
+
+  def _negative_elbo_bound(self, x, z_prior=(tf.zeros(1), tf.ones(1))):
+    m, v = encode(x)
+    z = self._sample_gaussian (m,v)
+    x_mean = decode(z)
+    kl_z = tf.mean(kl_normal(m, v, z_prior[0], z_prior[1]))
+    rec = -tf.mean(log_normal(x, x_mean, 0.1*tf.ones_like(x_mean)))
+    nelbo = kl_z + rec
+
+  def _loss(x):
+    nelbo, kl, rec = negative_elbo_bound(x)
+    loss = nelbo
+
+    summaries = dict((
+        ('train/loss', nelbo),
+        ('gen/elbo', -nelbo),
+        ('gen/kl_z', kl),
+        ('gen/rec', rec),
+    ))
+
+    return loss, summaries
+
+  def build(self, inputs, is_training):
+    """Build the graph for this configuration.
+
+    Args:
+      inputs: A dict of inputs. For training, should contain 'wav'.
+      is_training: Whether we are training or not. Not used in this config.
+
+    Returns:
+      A dict of outputs that includes the 'predictions', 'loss', the 'encoding',
+      the 'quantized_input', and whatever metrics we want to track for eval.
+    """
+    del is_training
+    num_stages = 10
+    num_layers = 30
+    filter_length = 3
+    width = 512
+    skip_width = 256
+    ae_num_stages = 10
+    ae_num_layers = 30
+    ae_filter_length = 3
+    ae_width = 128
+
+    # Encode the source with 8-bit Mu-Law.
+    x = inputs['wav']
+    x_quantized = utils.mu_law(x)
+    x_scaled = tf.cast(x_quantized, tf.float32) / 128.0
+    x_scaled = tf.expand_dims(x_scaled, 2)
+
+    ###
+    # The Non-Causal Temporal Encoder.
+    ###
+    en = masked.conv1d(
+        x_scaled,
+        causal=False,
+        num_filters=ae_width,
+        filter_length=ae_filter_length,
+        name='ae_startconv')
+
+    for num_layer in range(ae_num_layers):
+      dilation = 2**(num_layer % ae_num_stages)
+      d = tf.nn.relu(en)
+      d = masked.conv1d(
+          d,
+          causal=False,
+          num_filters=ae_width,
+          filter_length=ae_filter_length,
+          dilation=dilation,
+          name='ae_dilatedconv_%d' % (num_layer + 1))
+      d = tf.nn.relu(d)
+      en += masked.conv1d(
+          d,
+          num_filters=ae_width,
+          filter_length=1,
+          name='ae_res_%d' % (num_layer + 1))
+
+    en = masked.conv1d(
+        en,
+        num_filters=self.ae_bottleneck_width,
+        filter_length=1,
+        name='ae_bottleneck')
+    en = masked.pool1d(en, self.ae_hop_length, name='ae_pool', mode='avg')
+
+    # divide encoding into "mean" and "variance"
+    mn, v = self._gaussian_parameters(en)
+
+    # flatten "mean" and "var"
+    m_shape = mn.get_shape().as_list()
+    v_shape = v.get_shape().as_list()
+
+    mn = tf.reshape(mn, (-1, m_shape[-2]*m_shape[-1]))
+    v = tf.reshape(v, (-1, v_shape[-2]*v_shape[-1]))
+
+    # reparameterization trick
+    en = self._sample_gaussian(mn, v)
+
+    # reshape into original embedding shape
+    en = tf.reshape(en, (-1, m_shape[-2], m_shape[-1]))
+
+    encoding = en
+
+
+    ###
+    # The WaveNet Decoder.
+    ###
+    l = masked.shift_right(x_scaled)
+    l = masked.conv1d(
+        l, num_filters=width, filter_length=filter_length, name='startconv')
+
+    # Set up skip connections.
+    s = masked.conv1d(
+        l, num_filters=skip_width, filter_length=1, name='skip_start')
+
+    # Residual blocks with skip connections.
+    for i in range(num_layers):
+      dilation = 2**(i % num_stages)
+      d = masked.conv1d(
+          l,
+          num_filters=2 * width,
+          filter_length=filter_length,
+          dilation=dilation,
+          name='dilatedconv_%d' % (i + 1))
+      d = self._condition(d,
+                          masked.conv1d(
+                              en,
+                              num_filters=2 * width,
+                              filter_length=1,
+                              name='cond_map_%d' % (i + 1)))
+
+      assert d.get_shape().as_list()[2] % 2 == 0
+      m = d.get_shape().as_list()[2] // 2
+      d_sigmoid = tf.sigmoid(d[:, :, :m])
+      d_tanh = tf.tanh(d[:, :, m:])
+      d = d_sigmoid * d_tanh
+
+      l += masked.conv1d(
+          d, num_filters=width, filter_length=1, name='res_%d' % (i + 1))
+      s += masked.conv1d(
+          d, num_filters=skip_width, filter_length=1, name='skip_%d' % (i + 1))
+
+    s = tf.nn.relu(s)
+    s = masked.conv1d(s, num_filters=skip_width, filter_length=1, name='out1')
+    s = self._condition(s,
+                        masked.conv1d(
+                            en,
+                            num_filters=skip_width,
+                            filter_length=1,
+                            name='cond_map_out1'))
+    s = tf.nn.relu(s)
+
+    ###
+    # Compute the logits and get the loss.
+    ###
+    logits = masked.conv1d(s, num_filters=256, filter_length=1, name='logits')
+    logits = tf.reshape(logits, [-1, 256])
+    probs = tf.nn.softmax(logits, name='softmax')
+    x_indices = tf.cast(tf.reshape(x_quantized, [-1]), tf.int32) + 128
+
+    rec = tf.reduce_mean(
+        tf.nn.sparse_softmax_cross_entropy_with_logits(
+            logits=logits, labels=x_indices, name='nll'),
+        0,
+        name='loss')
+
+    kl = tf.reduce_mean(self._kl_normal(mn, v, tf.zeros(1), tf.ones(1)), name='kl')
+
+    aux = 0
+    beta = 1
+    alpha = 0
+    loss = rec + beta*kl + alpha*aux
+
+    return {
+        'predictions': probs,
+        'loss': loss,
+        'eval': {
+            'nll': loss,
+            'kl': kl
+        },
+        'quantized_input': x_quantized,
+        'encoding': encoding,
+    }

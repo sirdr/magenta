@@ -153,16 +153,16 @@ def load_batch(files, sample_length=64000):
   return batch_data
 
 
-def save_batch(batch_audio, batch_save_paths):
+def save_batch(batch_audio, batch_save_paths, rate=16000):
   for audio, name in zip(batch_audio, batch_save_paths):
     tf.logging.info("Saving: %s" % name)
-    wavfile.write(name, 16000, audio)
+    wavfile.write(name, rate, audio)
 
 
 def synthesize(encodings,
                save_paths,
                checkpoint_path="model.ckpt-200000",
-               samples_per_save=1000):
+               samples_per_save=1000, rate=16000):
   """Synthesize audio from an array of embeddings.
 
   Args:
@@ -209,5 +209,5 @@ def synthesize(encodings,
       if sample_i % 100 == 0:
         tf.logging.info("Sample: %d" % sample_i)
       if sample_i % samples_per_save == 0:
-        save_batch(audio_batch, save_paths)
+        save_batch(audio_batch, save_paths, rate=rate)
   save_batch(audio_batch, save_paths)

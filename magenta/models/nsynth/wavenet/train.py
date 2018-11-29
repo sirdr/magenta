@@ -51,6 +51,8 @@ tf.app.flags.DEFINE_string("train_path", "", "The path to the train tfrecord.")
 tf.app.flags.DEFINE_string("log", "INFO",
                            "The threshold for what messages will be logged."
                            "DEBUG, INFO, WARN, ERROR, or FATAL.")
+tf.app.flags.DEFINE_bool("vae", False,
+                           "Whether or not to train variationally")
 
 
 def main(unused_argv=None):
@@ -59,8 +61,12 @@ def main(unused_argv=None):
   if FLAGS.config is None:
     raise RuntimeError("No config name specified.")
 
-  config = utils.get_module("wavenet." + FLAGS.config).Config(
-      FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem)
+  if FLAGS.vae:
+    config = utils.get_module("wavenet." + FLAGS.config).VAEConfig(
+        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem)
+  else:
+    config = utils.get_module("wavenet." + FLAGS.config).Config(
+        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem)
 
   logdir = FLAGS.logdir
   tf.logging.info("Saving to %s" % logdir)
@@ -99,6 +105,10 @@ def main(unused_argv=None):
       outputs_dict = config.build(inputs_dict, is_training=True)
       loss = outputs_dict["loss"]
       tf.summary.scalar("train_loss", loss)
+
+      if FLAGS.vae:
+        kl = outputs_dict["eval"]["kl"]
+        tf.summary.scalar("kl", kl)
 
       worker_replicas = FLAGS.worker_replicas
       ema = tf.train.ExponentialMovingAverage(
