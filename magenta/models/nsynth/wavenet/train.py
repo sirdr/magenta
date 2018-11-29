@@ -105,7 +105,7 @@ def main(unused_argv=None):
       outputs_dict = config.build(inputs_dict, is_training=True)
 
       if FLAGS.vae:
-        annealing_rate = config.annealing_func(global_step-500)
+        annealing_rate = config.annealing_func(tf.to_float(global_step-500))
         kl = outputs_dict["loss"]["kl"]
         rec = outputs_dict["loss"]["rec"]
         tf.summary.scalar("kl", kl)
