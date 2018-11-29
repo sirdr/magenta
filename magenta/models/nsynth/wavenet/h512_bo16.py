@@ -522,7 +522,8 @@ class VAEConfig(Config):
         'loss': loss,
         'eval': {
             'nll': loss,
-            'kl': kl
+            'kl': kl,
+            'rec':rec
         },
         'quantized_input': x_quantized,
         'encoding': encoding,

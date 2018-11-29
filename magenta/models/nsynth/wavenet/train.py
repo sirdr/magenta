@@ -108,7 +108,10 @@ def main(unused_argv=None):
 
       if FLAGS.vae:
         kl = outputs_dict["eval"]["kl"]
+        rec = outputs_dict["eval"]["rec"]
         tf.summary.scalar("kl", kl)
+        tf.summary.scalar("rec", rec)
+
 
       worker_replicas = FLAGS.worker_replicas
       ema = tf.train.ExponentialMovingAverage(
@@ -120,11 +123,16 @@ def main(unused_argv=None):
           variable_averages=ema,
           variables_to_average=tf.trainable_variables())
 
-      train_op = opt.minimize(
-          loss,
-          global_step=global_step,
-          name="train",
+      train_op = slim.learning.create_train_op(total_loss = loss,
+          optimizer = opt,
+          global_step = global_step,
           colocate_gradients_with_ops=True)
+
+      # train_op = opt.minimize(
+      #     loss,
+      #     global_step=global_step,
+      #     name="train",
+      #     colocate_gradients_with_ops=True)
 
       session_config = tf.ConfigProto(allow_soft_placement=True)
 
