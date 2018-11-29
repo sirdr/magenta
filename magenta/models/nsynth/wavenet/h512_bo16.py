@@ -324,6 +324,7 @@ class VAEConfig(Config):
   def __init__(self, train_path=None, sample_length=64000, problem='nsynth', beta=1, alpha=0):
     super(VAEConfig, self).__init__(train_path=train_path, sample_length=sample_length, problem=problem)
     self.ae_bottleneck_width = 32 # double of deterministic ae for purposes of reparam
+    self.annealing_func = tf.math.sigmoid # how to adjust the annealing
 
   def _gaussian_parameters(self, h, dim=-1):
     m, h = tf.split(h, 2, axis=dim)
@@ -519,9 +520,11 @@ class VAEConfig(Config):
 
     return {
         'predictions': probs,
-        'loss': loss,
+        'loss': {
+            'kl': kl,
+            'rec': rec,
+            'aux': aux},
         'eval': {
-            'nll': loss,
             'kl': kl,
             'rec':rec
         },

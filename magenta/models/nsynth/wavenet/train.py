@@ -103,14 +103,19 @@ def main(unused_argv=None):
 
       # build the model graph
       outputs_dict = config.build(inputs_dict, is_training=True)
-      loss = outputs_dict["loss"]
-      tf.summary.scalar("train_loss", loss)
 
       if FLAGS.vae:
-        kl = outputs_dict["eval"]["kl"]
-        rec = outputs_dict["eval"]["rec"]
+        annealing_rate = config.annealing_func(global_step-500)
+        kl = outputs_dict["loss"]["kl"]
+        rec = outputs_dict["loss"]["rec"]
         tf.summary.scalar("kl", kl)
         tf.summary.scalar("rec", rec)
+        tf.summary.scalar("annealing_rate", annealing_rate)
+        loss = rec + annealing_rate*kl
+      else:
+        loss = outputs_dict["loss"]
+        
+      tf.summary.scalar("train_loss", loss)
 
 
       worker_replicas = FLAGS.worker_replicas
