@@ -31,12 +31,16 @@ tf.app.flags.DEFINE_string("checkpoint_path", "model.ckpt-200000",
                            "Path to checkpoint.")
 tf.app.flags.DEFINE_integer("sample_length", 100000000,
                             "Max output file size in samples.")
+tf.app.flags.DEFINE_integer("sr", 16000,
+                            "Sample Rate.")
 tf.app.flags.DEFINE_integer("batch_size", 1, "Number of samples per a batch.")
 tf.app.flags.DEFINE_string("log", "INFO",
                            "The threshold for what messages will be logged."
                            "DEBUG, INFO, WARN, ERROR, or FATAL.")
 tf.app.flags.DEFINE_integer("gpu_number", 0,
                             "Number of the gpu to use for multigpu generation.")
+tf.app.flags.DEFINE_boolean("vae", False,
+                            "which model to run (vae versus wavenet)")
 
 
 def main(unused_argv=None):
@@ -82,16 +86,16 @@ def main(unused_argv=None):
                      "gen_" + os.path.splitext(os.path.basename(f))[0] + ".wav")
         for f in batch_files
     ]
-    batch_data = fastgen.load_batch(batch_files, sample_length=sample_length)
+    batch_data = fastgen.load_batch(batch_files, sample_length=sample_length, sr=FLAGS.sr)
     # Encode waveforms
     encodings = batch_data if postfix == ".npy" else fastgen.encode(
-        batch_data, checkpoint_path, sample_length=sample_length)
+        batch_data, checkpoint_path, sample_length=sample_length, vae=FLAGS.vae)
     if FLAGS.gpu_number != 0:
       with tf.device("/device:GPU:%d" % FLAGS.gpu_number):
         fastgen.synthesize(
-            encodings, save_names, checkpoint_path=checkpoint_path)
+            encodings, save_names, checkpoint_path=checkpoint_path, rate=FLAGS.sr)
     else:
-      fastgen.synthesize(encodings, save_names, checkpoint_path=checkpoint_path)
+      fastgen.synthesize(encodings, save_names, checkpoint_path=checkpoint_path, rate=FLAGS.sr)
 
 
 def console_entry_point():

@@ -36,6 +36,7 @@ tf.app.flags.DEFINE_string("expdir", "",
                            "The log directory for this experiment. Required if "
                            "`checkpoint_path` is not given.")
 tf.app.flags.DEFINE_integer("sample_length", 64000, "Sample length.")
+tf.app.flags.DEFINE_integer("sr", 16000, "Sample rate.")
 tf.app.flags.DEFINE_integer("batch_size", 16, "Sample length.")
 tf.app.flags.DEFINE_string("log", "INFO",
                            "The threshold for what messages will be logged."
@@ -96,7 +97,7 @@ def main(unused_argv=None):
     batch_filler = batch_size - len(wavefiles_batch)
     wavefiles_batch.extend(batch_filler * [wavefiles_batch[-1]])
     wav_data = np.array(
-        [utils.load_audio(f, sample_length) for f in wavefiles_batch])
+        [utils.load_audio(f, sample_length, sr=FLAGS.sr) for f in wavefiles_batch])
     try:
       tf.reset_default_graph()
       # Load up the model for encoding and find the encoding

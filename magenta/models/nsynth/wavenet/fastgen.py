@@ -23,9 +23,11 @@ import os
 import numpy as np
 from scipy.io import wavfile
 import tensorflow as tf
+from IPython import embed
 
 from magenta.models.nsynth import utils
 from magenta.models.nsynth.wavenet.h512_bo16 import Config
+from magenta.models.nsynth.wavenet.h512_bo16 import VAEConfig
 from magenta.models.nsynth.wavenet.h512_bo16 import FastGenerationConfig
 
 
@@ -50,7 +52,7 @@ def sample_categorical(pmf):
   return idxs
 
 
-def load_nsynth(batch_size=1, sample_length=64000):
+def load_nsynth(batch_size=1, sample_length=64000, vae=False):
   """Load the NSynth autoencoder network.
 
   Args:
@@ -59,7 +61,10 @@ def load_nsynth(batch_size=1, sample_length=64000):
   Returns:
     graph: The network as a dict with input placeholder in {"X"}
   """
-  config = Config()
+  if vae:
+    config = VAEConfig()
+  else:
+    config = Config()
   with tf.device("/gpu:0"):
     x = tf.placeholder(tf.float32, shape=[batch_size, sample_length])
     graph = config.build({"wav": x}, is_training=False)
@@ -83,7 +88,7 @@ def load_fastgen_nsynth(batch_size=1):
   return graph
 
 
-def encode(wav_data, checkpoint_path, sample_length=64000):
+def encode(wav_data, checkpoint_path, sample_length=64000, vae=False):
   """Generate an array of embeddings from an array of audio.
 
   Args:
@@ -106,14 +111,18 @@ def encode(wav_data, checkpoint_path, sample_length=64000):
     hop_length = Config().ae_hop_length
     wav_data, sample_length = utils.trim_for_encoding(wav_data, sample_length,
                                                       hop_length)
-    net = load_nsynth(batch_size=batch_size, sample_length=sample_length)
+    net = load_nsynth(batch_size=batch_size, sample_length=sample_length, vae=vae)
     saver = tf.train.Saver()
     saver.restore(sess, checkpoint_path)
-    encodings = sess.run(net["encoding"], feed_dict={net["X"]: wav_data})
+    if vae:
+      encodings = np.random.normal(size=(batch_size, 15, 16))
+    else:
+      encodings = sess.run(net["encoding"], feed_dict={net["X"]: wav_data})
+
   return encodings
 
 
-def load_batch(files, sample_length=64000):
+def load_batch(files, sample_length=64000, sr=16000):
   """Load a batch of data from either .wav or .npy files.
 
   Args:
@@ -132,7 +141,7 @@ def load_batch(files, sample_length=64000):
       data = np.load(f)
       batch_data.append(data)
     else:
-      data = utils.load_audio(f, sample_length, sr=16000)
+      data = utils.load_audio(f, sample_length, sr=sr)
       batch_data.append(data)
     if data.shape[0] > max_length:
       max_length = data.shape[0]
@@ -147,7 +156,10 @@ def load_batch(files, sample_length=64000):
         padded[:data.shape[0]] = data
       batch_data[i] = padded
     else:
-      batch_data[i] = data[np.newaxis, :, :]
+      try:
+        batch_data[i] = data[np.newaxis, :, :]
+      except:
+        batch_data[i] = data
   # Return arrays
   batch_data = np.vstack(batch_data)
   return batch_data
@@ -170,7 +182,7 @@ def synthesize(encodings,
     save_paths: Iterable of output file names.
     checkpoint_path: Location of the pretrained model. [model.ckpt-200000]
     samples_per_save: Save files after every amount of generated samples.
-  """
+  """ 
   hop_length = Config().ae_hop_length
   # Get lengths
   batch_size = encodings.shape[0]
@@ -210,4 +222,4 @@ def synthesize(encodings,
         tf.logging.info("Sample: %d" % sample_i)
       if sample_i % samples_per_save == 0:
         save_batch(audio_batch, save_paths, rate=rate)
-  save_batch(audio_batch, save_paths)
+  save_batch(audio_batch, save_paths, rate=rate)
