@@ -119,6 +119,14 @@ bazel run //magenta/models/nsynth/wavenet/train -- \
 --logdir=/<path>
 ```
 
+(Variational WaveNet)
+```bash
+bazel run //magenta/models/nsynth/wavenet/train -- \
+--train_path=/<path>/nsynth-train.tfrecord \
+--logdir=/<path>
+--vae=True
+```
+
 The WaveNet training also requires tensorflow 1.1.0-rc1 or beyond.
 
 [arXiv]: https://arxiv.org/abs/1704.01279
