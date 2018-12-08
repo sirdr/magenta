@@ -386,7 +386,7 @@ class VAEConfig(Config):
     width = 512
     skip_width = 256
     ae_num_stages = 10
-    ae_num_layers = 20
+    ae_num_layers = 10
     ae_filter_length = 3
     ae_width = 128
 
