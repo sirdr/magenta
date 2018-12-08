@@ -22,6 +22,7 @@ import tensorflow as tf
 from magenta.models.nsynth import reader
 from magenta.models.nsynth import utils
 from magenta.models.nsynth.wavenet import masked
+import tensorflow_probability as tfp
 
 
 class FastGenerationConfig(object):
@@ -321,10 +322,13 @@ class Config(object):
 class VAEConfig(Config):
   """Configuration object that helps manage the graph."""
 
-  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', beta=1, alpha=0):
+  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', annealing_scale=150., annealing_loc=1750.):
     super(VAEConfig, self).__init__(train_path=train_path, sample_length=sample_length, problem=problem)
     self.ae_bottleneck_width = 32 # double of deterministic ae for purposes of reparam
-    self.annealing_func = tf.math.sigmoid # how to adjust the annealing
+    #self.annealing_func = tf.math.sigmoid # how to adjust the annealing
+    dist = tfp.distributions.Normal(loc=annealing_loc, scale=annealing_scale)
+    self.annealing_func = dist.cdf # how to adjust the annealing
+    self.auxiliary_coef = 1/2
 
   def _gaussian_parameters(self, h, dim=-1):
     m, h = tf.split(h, 2, axis=dim)
@@ -513,10 +517,7 @@ class VAEConfig(Config):
 
     kl = tf.reduce_mean(self._kl_normal(mn, v, tf.zeros(1), tf.ones(1)), name='kl')
 
-    aux = 0
-    beta = 1
-    alpha = 0
-    loss = rec + beta*kl + alpha*aux
+    aux = 
 
     return {
         'predictions': probs,
