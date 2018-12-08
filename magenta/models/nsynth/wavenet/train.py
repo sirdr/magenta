@@ -22,6 +22,7 @@ set to 1. For training in 200k iterations, they both should be 32.
 """
 
 import tensorflow as tf
+import tensorflow_probability as tfp
 
 from magenta.models.nsynth import utils
 
@@ -53,6 +54,10 @@ tf.app.flags.DEFINE_string("log", "INFO",
                            "DEBUG, INFO, WARN, ERROR, or FATAL.")
 tf.app.flags.DEFINE_bool("vae", False,
                            "Whether or not to train variationally")
+tf.app.flags.DEFINE_float("annealing_loc", 1750.,
+                           "params of normal cdf for annealing")
+tf.app.flags.DEFINE_float("annealing_scale", 150.,
+                           "params of normal cdf for annealing")
 
 
 def main(unused_argv=None):
@@ -105,7 +110,8 @@ def main(unused_argv=None):
       outputs_dict = config.build(inputs_dict, is_training=True)
 
       if FLAGS.vae:
-        annealing_rate = config.annealing_func(tf.to_float(global_step-500))
+        dist = tfp.distributions.Normal(loc=FLAGS.annealing_loc, scale=FLAGS.annealing_scale)
+        annealing_rate = dist.cdf(tf.to_float(global_step)) # how to adjust the annealing
         kl = outputs_dict["loss"]["kl"]
         rec = outputs_dict["loss"]["rec"]
         tf.summary.scalar("kl", kl)
