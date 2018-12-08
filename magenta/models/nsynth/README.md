@@ -51,7 +51,15 @@ nsynth_generate \
 --save_path=/<path> \
 --batch_size=4
 ```
-
+(Variational WaveNet)
+```bash
+nsynth_generate \
+--checkpoint_path=/<path>/vae-wavenet-ckpt/model.ckpt-200000 \
+--source_path=/<path> \
+--save_path=/<path> \
+--batch_size=4 \
+--vae=True
+```
 
 # Saving Embeddings
 
@@ -77,6 +85,16 @@ nsynth_save_embeddings \
 --source_path=/<path> \
 --save_path=/<path> \
 --batch_size=4
+```
+
+(Variational WaveNet)
+```bash
+nsynth_save_embeddings \
+--checkpoint_path=/<path>/vae-wavenet-ckpt/model.ckpt-200000 \
+--source_path=/<path> \
+--save_path=/<path> \
+--batch_size=4 \
+--vae=True
 ```
 
 Example Usage (Generate from .npy Embeddings):
@@ -123,7 +141,7 @@ bazel run //magenta/models/nsynth/wavenet/train -- \
 ```bash
 bazel run //magenta/models/nsynth/wavenet/train -- \
 --train_path=/<path>/nsynth-train.tfrecord \
---logdir=/<path>
+--logdir=/<path> \
 --vae=True
 ```
 
