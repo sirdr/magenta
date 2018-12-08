@@ -517,7 +517,7 @@ class VAEConfig(Config):
 
     kl = tf.reduce_mean(self._kl_normal(mn, v, tf.zeros(1), tf.ones(1)), name='kl')
 
-    aux = 
+    aux = 0
 
     return {
         'predictions': probs,
