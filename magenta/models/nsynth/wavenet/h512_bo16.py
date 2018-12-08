@@ -197,12 +197,12 @@ class Config(object):
     """
     del is_training
     num_stages = 10
-    num_layers = 30
+    num_layers = 10
     filter_length = 3
     width = 512
     skip_width = 256
     ae_num_stages = 10
-    ae_num_layers = 30
+    ae_num_layers = 10
     ae_filter_length = 3
     ae_width = 128
 
@@ -381,12 +381,12 @@ class VAEConfig(Config):
     """
     del is_training
     num_stages = 10
-    num_layers = 30
+    num_layers = 10
     filter_length = 3
     width = 512
     skip_width = 256
     ae_num_stages = 10
-    ae_num_layers = 30
+    ae_num_layers = 20
     ae_filter_length = 3
     ae_width = 128
 
