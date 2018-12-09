@@ -62,6 +62,8 @@ tf.app.flags.DEFINE_float("annealing_loc", 1750.,
                            "params of normal cdf for annealing")
 tf.app.flags.DEFINE_float("annealing_scale", 150.,
                            "params of normal cdf for annealing")
+tf.app.flags.DEFINE_float("kl_threshold", None,
+                           "Threshold with which to bound KL-Loss")
 
 
 def main(unused_argv=None):
@@ -121,6 +123,8 @@ def main(unused_argv=None):
         tf.summary.scalar("kl", kl)
         tf.summary.scalar("rec", rec)
         tf.summary.scalar("annealing_rate", annealing_rate)
+        if FLAGS.kl_threshold is not None:
+          kl = tf.maximum(tf.cast(FLAGS.kl_threshold, dtype=kl.dtype), kl)
         loss = rec + annealing_rate*kl
       else:
         loss = outputs_dict["loss"]
