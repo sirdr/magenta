@@ -1,3 +1,13 @@
+
+# Contributions of this Fork
+```diff
++ Training of WaveNet autoencoder variationally using gaussian prior
+```
+Activate with `--vae=True`.
+```diff
++ Optional KL annealing
+```
+Activate with `--kl_annealing=True`.
 # NSynth: Neural Audio Synthesis
 
 NSynth is a WaveNet-based autoencoder for synthesizing audio.
@@ -51,7 +61,15 @@ nsynth_generate \
 --save_path=/<path> \
 --batch_size=4
 ```
-
+(Variational WaveNet)
+```bash
+nsynth_generate \
+--checkpoint_path=/<path>/vae-wavenet-ckpt/model.ckpt-200000 \
+--source_path=/<path> \
+--save_path=/<path> \
+--batch_size=4 \
+--vae=True
+```
 
 # Saving Embeddings
 
@@ -77,6 +95,16 @@ nsynth_save_embeddings \
 --source_path=/<path> \
 --save_path=/<path> \
 --batch_size=4
+```
+
+(Variational WaveNet)
+```bash
+nsynth_save_embeddings \
+--checkpoint_path=/<path>/vae-wavenet-ckpt/model.ckpt-200000 \
+--source_path=/<path> \
+--save_path=/<path> \
+--batch_size=4 \
+--vae=True
 ```
 
 Example Usage (Generate from .npy Embeddings):
@@ -117,6 +145,14 @@ bazel run //magenta/models/nsynth/baseline:train -- \
 bazel run //magenta/models/nsynth/wavenet/train -- \
 --train_path=/<path>/nsynth-train.tfrecord \
 --logdir=/<path>
+```
+
+(Variational WaveNet)
+```bash
+bazel run //magenta/models/nsynth/wavenet/train -- \
+--train_path=/<path>/nsynth-train.tfrecord \
+--logdir=/<path> \
+--vae=True
 ```
 
 The WaveNet training also requires tensorflow 1.1.0-rc1 or beyond.
