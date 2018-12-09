@@ -72,10 +72,10 @@ def main(unused_argv=None):
 
   if FLAGS.vae:
     config = utils.get_module("wavenet." + FLAGS.config).VAEConfig(
-        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=small, asymmetric=asymmetric)
+        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric)
   else:
     config = utils.get_module("wavenet." + FLAGS.config).Config(
-        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=small, asymmetric=asymmetric)
+        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric)
 
   logdir = FLAGS.logdir
   tf.logging.info("Saving to %s" % logdir)
