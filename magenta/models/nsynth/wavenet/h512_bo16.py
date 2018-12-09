@@ -28,9 +28,21 @@ import tensorflow_probability as tfp
 class FastGenerationConfig(object):
   """Configuration object that helps manage the graph."""
 
-  def __init__(self, batch_size=1):
+  def __init__(self, batch_size=1, small=False, asymmetric=False):
     """."""
     self.batch_size = batch_size
+    if small:
+      self.num_stages = 10
+      if asymmetric:
+        self.num_layers = 5
+      else:
+        self.num_layers = 10
+    else:
+      self.num_stages = 10
+      if asymmetric:
+        self.num_layers = 25
+      else:
+        self.num_layers = 30
 
   def build(self, inputs):
     """Build the graph for this configuration.
@@ -42,8 +54,8 @@ class FastGenerationConfig(object):
       A dict of outputs that includes the 'predictions',
       'init_ops', the 'push_ops', and the 'quantized_input'.
     """
-    num_stages = 10
-    num_layers = 30
+    num_stages = self.num_stages
+    num_layers = self.num_layers
     filter_length = 3
     width = 512
     skip_width = 256
@@ -140,7 +152,7 @@ class FastGenerationConfig(object):
 class Config(object):
   """Configuration object that helps manage the graph."""
 
-  def __init__(self, train_path=None, sample_length=64000, problem='nsynth'):
+  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', small=False, asymmetric=False):
     self.num_iters = 200000
     self.learning_rate_schedule = {
         0: 2e-4,
@@ -156,6 +168,25 @@ class Config(object):
     self.train_path = train_path
     self.sample_length = sample_length
     self.problem=problem
+    if small:
+      self.num_stages = 10
+      self.ae_num_stages = 10
+      if asymmetric:
+        self.num_layers = 5
+        self.ae_num_layers = 15
+      else:
+        self.num_layers = 10
+        self.ae_num_layers = 10
+    else:
+      self.num_stages = 10
+      self.ae_num_stages = 10
+      if asymmetric:
+        self.num_layers = 25
+        self.ae_num_layers = 35
+      else:
+        self.num_layers = 30
+        self.ae_num_layers = 30
+
 
   def get_batch(self, batch_size):
     assert self.train_path is not None
@@ -197,13 +228,13 @@ class Config(object):
       the 'quantized_input', and whatever metrics we want to track for eval.
     """
     del is_training
-    num_stages = 10
-    num_layers = 10
+    num_stages = self.num_stages
+    num_layers = self.num_layers
     filter_length = 3
     width = 512
     skip_width = 256
-    ae_num_stages = 10
-    ae_num_layers = 10
+    ae_num_stages = self.ae_num_stages
+    ae_num_layers = self.ae_num_layers
     ae_filter_length = 3
     ae_width = 128
 
@@ -322,12 +353,9 @@ class Config(object):
 class VAEConfig(Config):
   """Configuration object that helps manage the graph."""
 
-  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', annealing_scale=150., annealing_loc=1750.):
-    super(VAEConfig, self).__init__(train_path=train_path, sample_length=sample_length, problem=problem)
-    self.ae_bottleneck_width = 32 # double of deterministic ae for purposes of reparam
-    #self.annealing_func = tf.math.sigmoid # how to adjust the annealing
-    dist = tfp.distributions.Normal(loc=annealing_loc, scale=annealing_scale)
-    self.annealing_func = dist.cdf # how to adjust the annealing
+  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', small=False, asymmetric=False):
+    super(VAEConfig, self).__init__(train_path=train_path, sample_length=sample_length, problem=problem, small=small, asymmetric=asymmetric)
+    self.ae_bottleneck_width = 32 # double of deterministic ae for purposes of reparameterization
     self.auxiliary_coef = 1/2
 
   def _gaussian_parameters(self, h, dim=-1):

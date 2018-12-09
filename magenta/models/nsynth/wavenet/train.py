@@ -54,6 +54,10 @@ tf.app.flags.DEFINE_string("log", "INFO",
                            "DEBUG, INFO, WARN, ERROR, or FATAL.")
 tf.app.flags.DEFINE_bool("vae", False,
                            "Whether or not to train variationally")
+tf.app.flags.DEFINE_bool("small", False,
+                           "Whether to use full model i.e. 30 layers in decoder/encoder or reduced model")
+tf.app.flags.DEFINE_bool("asymmetric", False,
+                           "Whether to have equal number of layers in decoder/encoder or a weaker decoder")
 tf.app.flags.DEFINE_float("annealing_loc", 1750.,
                            "params of normal cdf for annealing")
 tf.app.flags.DEFINE_float("annealing_scale", 150.,
@@ -68,10 +72,10 @@ def main(unused_argv=None):
 
   if FLAGS.vae:
     config = utils.get_module("wavenet." + FLAGS.config).VAEConfig(
-        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem)
+        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=small, asymmetric=asymmetric)
   else:
     config = utils.get_module("wavenet." + FLAGS.config).Config(
-        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem)
+        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=small, asymmetric=asymmetric)
 
   logdir = FLAGS.logdir
   tf.logging.info("Saving to %s" % logdir)
