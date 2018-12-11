@@ -70,7 +70,7 @@ tf.app.flags.DEFINE_float("annealing_scale", 150.,
                            "params of normal cdf for annealing")
 tf.app.flags.DEFINE_float("kl_threshold", None,
                            "Threshold with which to bound KL-Loss")
-tf.app.flags.DEFINE_float("input_dropout", 0,
+tf.app.flags.DEFINE_float("input_dropout", 1,
                            "How much dropout at input to add")
 
 
