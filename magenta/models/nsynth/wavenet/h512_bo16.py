@@ -548,9 +548,7 @@ class VAEConfig(Config):
 
       _, _, reps, _ = tf.reshape(s, [mb, enc_length, -1, channels]).get_shape().as_list()
 
-      multiples = tf.ones_like(tf.shape(en_logits), dtype=tf.int32)
-      multiples[2] = reps
-      en_logits = tf.tile(en_logits, multiples)
+      en_logits = tf.tile(en_logits, [1, 1, reps, 1])
       en_logits = tf.reshape(en_logits, [mb, length, channels])
       en_logits = masked.conv1d(en_logits, num_filters=256, filter_length=1, name='en_logits')
       en_logits = tf.reshape(en_logits, [-1, 256])
