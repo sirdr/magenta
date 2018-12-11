@@ -137,7 +137,7 @@ def main(unused_argv=None):
           kl = tf.maximum(tf.cast(FLAGS.kl_threshold, dtype=kl.dtype), kl)
         if FLAGS.aux_coefficient > 0:
           tf.summary.scalar("aux", aux)
-        loss = rec + annealing_rate*kl + tf.cast(FLAGS.aux_coefficient, dtype=kl.float32)*aux
+        loss = rec + annealing_rate*kl + tf.cast(FLAGS.aux_coefficient, dtype=tf.float32)*aux
       else:
         loss = outputs_dict["loss"]
         
