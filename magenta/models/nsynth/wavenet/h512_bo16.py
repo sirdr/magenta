@@ -488,7 +488,7 @@ class VAEConfig(Config):
     ###
     # The WaveNet Decoder.
     ###
-    dropout_mask = tf.distributions.Bernoulli(probs=tf.to_float(self.dropout)).sample(sample_shape=tf.shape(x_scaled))
+    dropout_mask = tf.distributions.Bernoulli(probs=tf.to_float(self.dropout), dtype=tf.float32).sample(sample_shape=tf.shape(x_scaled))
     l = tf.math.multiply(masked.shift_right(x_scaled), dropout_mask)
     l = masked.conv1d(
         l, num_filters=width, filter_length=filter_length, name='startconv')
