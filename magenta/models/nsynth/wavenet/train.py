@@ -135,7 +135,7 @@ def main(unused_argv=None):
         tf.summary.scalar("annealing_rate", annealing_rate)
         if FLAGS.kl_threshold is not None:
           kl = tf.maximum(tf.cast(FLAGS.kl_threshold, dtype=kl.dtype), kl)
-        if FLAGs.aux_coefficient > 0:
+        if FLAGS.aux_coefficient > 0:
           tf.summary.scalar("aux", aux)
         loss = rec + annealing_rate*kl + tf.cast(FLAGS.aux_coefficient, dtype=kl.float32)*aux
       else:
