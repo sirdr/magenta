@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-r"""The training script that runs the party.
+r"""The evaluation script.
 
 This script requires tensorflow 1.1.0-rc1 or beyond.
 As of 04/05/17 this requires installing tensorflow from source,
@@ -44,13 +44,11 @@ tf.app.flags.DEFINE_integer("total_batch_size", 1,
                             "We use a size of 32.")
 tf.app.flags.DEFINE_integer("sample_length", 64000,
                             "Raw sample length of input.")
-tf.app.flags.DEFINE_integer("num_iters", 200000,
-                            "maximum number of iterations to train for")
 tf.app.flags.DEFINE_string("logdir", "/tmp/nsynth",
                            "The log directory for this experiment.")
 tf.app.flags.DEFINE_string("problem", "nsynth",
                            "Which problem setup (i.e. dataset) to use")
-tf.app.flags.DEFINE_string("train_path", "", "The path to the train tfrecord.")
+tf.app.flags.DEFINE_string("eval_path", "", "The path to the train tfrecord.")
 tf.app.flags.DEFINE_string("log", "INFO",
                            "The threshold for what messages will be logged."
                            "DEBUG, INFO, WARN, ERROR, or FATAL.")
@@ -60,16 +58,6 @@ tf.app.flags.DEFINE_bool("small", False,
                            "Whether to use full model i.e. 30 layers in decoder/encoder or reduced model")
 tf.app.flags.DEFINE_bool("asymmetric", False,
                            "Whether to have equal number of layers in decoder/encoder or a weaker decoder")
-tf.app.flags.DEFINE_bool("kl_annealing", False,
-                           "Whether to use kl_annealing")
-tf.app.flags.DEFINE_float("aux_coefficient", 0,
-                           "coefficient for auxilliary loss")
-tf.app.flags.DEFINE_float("annealing_loc", 1750.,
-                           "params of normal cdf for annealing")
-tf.app.flags.DEFINE_float("annealing_scale", 150.,
-                           "params of normal cdf for annealing")
-tf.app.flags.DEFINE_float("kl_threshold", None,
-                           "Threshold with which to bound KL-Loss")
 
 
 def main(unused_argv=None):
@@ -80,10 +68,10 @@ def main(unused_argv=None):
 
   if FLAGS.vae:
     config = utils.get_module("wavenet." + FLAGS.config).VAEConfig(
-        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric, num_iters=FLAGS.num_iters, aux=FLAGS.aux_coefficient)
+        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric)
   else:
     config = utils.get_module("wavenet." + FLAGS.config).Config(
-        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric, num_iters=FLAGS.num_iters)
+        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric)
 
   logdir = FLAGS.logdir
   tf.logging.info("Saving to %s" % logdir)
@@ -110,34 +98,20 @@ def main(unused_argv=None):
           initializer=tf.constant_initializer(0),
           trainable=False)
 
-      # pylint: disable=cell-var-from-loop
-      lr = tf.constant(config.learning_rate_schedule[0])
-      for key, value in config.learning_rate_schedule.iteritems():
-        lr = tf.cond(
-            tf.less(global_step, key), lambda: lr, lambda: tf.constant(value))
-      # pylint: enable=cell-var-from-loop
-      tf.summary.scalar("learning_rate", lr)
-
       # build the model graph
       outputs_dict = config.build(inputs_dict, is_training=True)
 
       if FLAGS.vae:
-        if FLAGS.kl_annealing:
-          dist = tfp.distributions.Normal(loc=FLAGS.annealing_loc, scale=FLAGS.annealing_scale)
-          annealing_rate = dist.cdf(tf.to_float(global_step)) # how to adjust the annealing
-        else:
-          annealing_rate = 0.
+        dist = tfp.distributions.Normal(loc=FLAGS.annealing_loc, scale=FLAGS.annealing_scale)
+        annealing_rate = dist.cdf(tf.to_float(global_step)) # how to adjust the annealing
         kl = outputs_dict["loss"]["kl"]
         rec = outputs_dict["loss"]["rec"]
-        aux = outputs_dict["loss"]["aux"]
         tf.summary.scalar("kl", kl)
         tf.summary.scalar("rec", rec)
         tf.summary.scalar("annealing_rate", annealing_rate)
         if FLAGS.kl_threshold is not None:
           kl = tf.maximum(tf.cast(FLAGS.kl_threshold, dtype=kl.dtype), kl)
-        if FLAG.aux_coefficient > 0:
-          tf.summary.scalar("aux", aux)
-        loss = rec + annealing_rate*kl + tf.cast(FLAGS.aux_coefficient, dtype=kl.float32)*aux
+        loss = rec + annealing_rate*kl
       else:
         loss = outputs_dict["loss"]
         
@@ -145,42 +119,46 @@ def main(unused_argv=None):
 
 
       worker_replicas = FLAGS.worker_replicas
-      ema = tf.train.ExponentialMovingAverage(
-          decay=0.9999, num_updates=global_step)
-      opt = tf.train.SyncReplicasOptimizer(
-          tf.train.AdamOptimizer(lr, epsilon=1e-8),
-          worker_replicas,
-          total_num_replicas=worker_replicas,
-          variable_averages=ema,
-          variables_to_average=tf.trainable_variables())
-
-      train_op = slim.learning.create_train_op(total_loss = loss,
-          optimizer = opt,
-          global_step = global_step,
-          colocate_gradients_with_ops=True)
-
-      # train_op = opt.minimize(
-      #     loss,
-      #     global_step=global_step,
-      #     name="train",
-      #     colocate_gradients_with_ops=True)
 
       session_config = tf.ConfigProto(allow_soft_placement=True)
 
       is_chief = (FLAGS.task == 0)
       local_init_op = opt.chief_init_op if is_chief else opt.local_step_init_op
 
-      slim.learning.train(
+      # Create the summary ops such that they also print out to std output:
+      summary_ops = []
+      for metric_name, metric_value in names_to_values.iteritems():
+        op = tf.summary.scalar(metric_name, metric_value)
+        op = tf.Print(op, [metric_value], metric_name)
+        summary_ops.append(op)
+
+      num_examples = 10000
+      batch_size = 32
+      num_batches = math.ceil(num_examples / float(batch_size))
+
+      # Setup the global step.
+      slim.get_or_create_global_step()
+
+      output_dir = ... # Where the summaries are stored.
+      eval_interval_secs = ... # How often to run the evaluation.
+      slim.evaluation.evaluation_loop(
+          'local',
+          checkpoint_dir,
+          log_dir,
+          num_evals=num_batches,
+          eval_op=names_to_updates.values(),
+          summary_op=tf.summary.merge(summary_ops),
+          eval_interval_secs=eval_interval_secs)
+
+      slim.evaluation.evaluation_loop(
           train_op=train_op,
           logdir=logdir,
-          is_chief=is_chief,
+          num_evals=num_batches,
           master=FLAGS.master,
           number_of_steps=config.num_iters,
           global_step=global_step,
           log_every_n_steps=250,
           local_init_op=local_init_op,
-          save_interval_secs=300,
-          sync_optimizer=opt,
           session_config=session_config,)
 
 

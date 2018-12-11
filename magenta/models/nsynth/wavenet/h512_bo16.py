@@ -152,8 +152,8 @@ class FastGenerationConfig(object):
 class Config(object):
   """Configuration object that helps manage the graph."""
 
-  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', small=False, asymmetric=False):
-    self.num_iters = 200000
+  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', small=False, asymmetric=False, num_iters=200000):
+    self.num_iters = num_iters
     self.learning_rate_schedule = {
         0: 2e-4,
         90000: 4e-4 / 3,
@@ -353,10 +353,12 @@ class Config(object):
 class VAEConfig(Config):
   """Configuration object that helps manage the graph."""
 
-  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', small=False, asymmetric=False):
-    super(VAEConfig, self).__init__(train_path=train_path, sample_length=sample_length, problem=problem, small=small, asymmetric=asymmetric)
+  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', small=False, asymmetric=False, num_iters=200000, iw=1, aux=0):
+    super(VAEConfig, self).__init__(train_path=train_path, sample_length=sample_length, problem=problem, small=small, asymmetric=asymmetric, num_iters=num_iters)
     self.ae_bottleneck_width = 32 # double of deterministic ae for purposes of reparameterization
     self.auxiliary_coef = 1/2
+    self.iw = iw
+    self.aux = aux
 
   def _gaussian_parameters(self, h, dim=-1):
     m, h = tf.split(h, 2, axis=dim)
@@ -379,13 +381,11 @@ class VAEConfig(Config):
     z = m + noise
     return z
 
-  def _negative_elbo_bound(self, x, z_prior=(tf.zeros(1), tf.ones(1))):
-    m, v = encode(x)
-    z = self._sample_gaussian (m,v)
-    x_mean = decode(z)
-    kl_z = tf.mean(kl_normal(m, v, z_prior[0], z_prior[1]))
-    rec = -tf.mean(log_normal(x, x_mean, 0.1*tf.ones_like(x_mean)))
-    nelbo = kl_z + rec
+  def _duplicate(self, x, rep):
+
+      multiples = tf.ones_like(tf.shape(x), dtype=tf.int32)
+      multiples[0] = rep
+      return tf.tile(x, multiples)
 
   def _loss(x):
     nelbo, kl, rec = negative_elbo_bound(x)
@@ -427,6 +427,9 @@ class VAEConfig(Config):
     x_quantized = utils.mu_law(x)
     x_scaled = tf.cast(x_quantized, tf.float32) / 128.0
     x_scaled = tf.expand_dims(x_scaled, 2)
+
+    if self.iw > 1:
+      x_scaled = self._duplicate(x_scaled, self.iw)
 
     ###
     # The Non-Causal Temporal Encoder.
@@ -529,6 +532,30 @@ class VAEConfig(Config):
                             name='cond_map_out1'))
     s = tf.nn.relu(s)
 
+    if self.aux > 0:
+      en_logits = masked.conv1d(
+                            en,
+                            num_filters=skip_width,
+                            filter_length=1,
+                            name='cond_map_rec')
+      enc_mb, enc_length, enc_channels = en_logits.get_shape().as_list()
+      mb, length, channels = s.get_shape().as_list()
+      assert enc_mb == mb
+      assert enc_channels == channels
+
+      en_logits = tf.nn.relu(en_logits)
+      en_logits = tf.reshape(en_logits, [mb, length, 1, channels])
+
+      _, _, reps, _ = tf.reshape(s, [mb, length, -1, channels]).get_shape().as_list()
+
+      multiples = tf.ones_like(tf.shape(en_logits), dtype=tf.int32)
+      multiples[2] = reps
+      en_logits = tf.tile(en_logits, multiples)
+      en_logits = masked.conv1d(en_logits, num_filters=256, filter_length=1, name='en_logits')
+      en_logits = tf.reshape(en_logits, [-1, 256])
+      en_probs = tf.nn.softmax(en_logits, name='en_softmax')
+
+
     ###
     # Compute the logits and get the loss.
     ###
@@ -543,9 +570,17 @@ class VAEConfig(Config):
         0,
         name='loss')
 
-    kl = tf.reduce_mean(self._kl_normal(mn, v, tf.zeros(1), tf.ones(1)), name='kl')
+    if self.aux > 0:
+      aux = tf.reduce_mean(
+        tf.nn.sparse_softmax_cross_entropy_with_logits(
+            logits=en_logits, labels=x_indices, name='en_nll'),
+        0,
+        name='aux')
+    else:
+      aux = 0
 
-    aux = 0
+
+    kl = tf.reduce_mean(self._kl_normal(mn, v, tf.zeros(1), tf.ones(1)), name='kl')
 
     return {
         'predictions': probs,
