@@ -353,12 +353,13 @@ class Config(object):
 class VAEConfig(Config):
   """Configuration object that helps manage the graph."""
 
-  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', small=False, asymmetric=False, num_iters=200000, iw=1, aux=0):
+  def __init__(self, train_path=None, sample_length=64000, problem='nsynth', small=False, asymmetric=False, num_iters=200000, iw=1, aux=0, dropout=0):
     super(VAEConfig, self).__init__(train_path=train_path, sample_length=sample_length, problem=problem, small=small, asymmetric=asymmetric, num_iters=num_iters)
     self.ae_bottleneck_width = 32 # double of deterministic ae for purposes of reparameterization
     self.auxiliary_coef = 1/2
     self.iw = iw
     self.aux = aux
+    self.dropout = dropout
 
   def _gaussian_parameters(self, h, dim=-1):
     m, h = tf.split(h, 2, axis=dim)
@@ -487,7 +488,8 @@ class VAEConfig(Config):
     ###
     # The WaveNet Decoder.
     ###
-    l = masked.shift_right(x_scaled)
+    dropout_mask = tf.distributions.Bernoulli(probs=tf.to_float(self.dropout)).sample(sample_shape=tf.shape(x_scaled))
+    l = tf.math.multiply(masked.shift_right(x_scaled), dropout_mask)
     l = masked.conv1d(
         l, num_filters=width, filter_length=filter_length, name='startconv')
 

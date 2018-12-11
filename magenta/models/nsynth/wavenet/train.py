@@ -70,6 +70,8 @@ tf.app.flags.DEFINE_float("annealing_scale", 150.,
                            "params of normal cdf for annealing")
 tf.app.flags.DEFINE_float("kl_threshold", None,
                            "Threshold with which to bound KL-Loss")
+tf.app.flags.DEFINE_float("input_dropout", 0,
+                           "How much dropout at input to add")
 
 
 def main(unused_argv=None):
@@ -80,7 +82,7 @@ def main(unused_argv=None):
 
   if FLAGS.vae:
     config = utils.get_module("wavenet." + FLAGS.config).VAEConfig(
-        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric, num_iters=FLAGS.num_iters, aux=FLAGS.aux_coefficient)
+        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric, num_iters=FLAGS.num_iters, aux=FLAGS.aux_coefficient, dropout=FLAGS.input_dropout)
   else:
     config = utils.get_module("wavenet." + FLAGS.config).Config(
         FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric, num_iters=FLAGS.num_iters)
