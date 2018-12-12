@@ -23,6 +23,9 @@ set to 1. For training in 200k iterations, they both should be 32.
 
 import tensorflow as tf
 import tensorflow_probability as tfp
+import numpy as np
+import os
+import pickle
 
 from magenta.models.nsynth import utils
 
@@ -44,8 +47,14 @@ tf.app.flags.DEFINE_integer("total_batch_size", 1,
                             "We use a size of 32.")
 tf.app.flags.DEFINE_integer("sample_length", 64000,
                             "Raw sample length of input.")
+tf.app.flags.DEFINE_integer("num_evals", None,
+                            "number of evauaitons -- None does entire dataset")
 tf.app.flags.DEFINE_string("logdir", "/tmp/nsynth",
                            "The log directory for this experiment.")
+tf.app.flags.DEFINE_string("checkpoint_dir", "/tmp/nsynth",
+                           "Where the checkpoints are stored")
+tf.app.flags.DEFINE_string("checkpoint_path", None,
+                           "path of checkpoint -- if none use checkpoint_dir")
 tf.app.flags.DEFINE_string("problem", "nsynth",
                            "Which problem setup (i.e. dataset) to use")
 tf.app.flags.DEFINE_string("eval_path", "", "The path to the train tfrecord.")
@@ -58,7 +67,18 @@ tf.app.flags.DEFINE_bool("small", False,
                            "Whether to use full model i.e. 30 layers in decoder/encoder or reduced model")
 tf.app.flags.DEFINE_bool("asymmetric", False,
                            "Whether to have equal number of layers in decoder/encoder or a weaker decoder")
-
+tf.app.flags.DEFINE_bool("kl_annealing", False,
+                           "Whether to use kl_annealing")
+tf.app.flags.DEFINE_float("aux_coefficient", 0,
+                           "coefficient for auxilliary loss")
+tf.app.flags.DEFINE_float("annealing_loc", 1750.,
+                           "params of normal cdf for annealing")
+tf.app.flags.DEFINE_float("annealing_scale", 150.,
+                           "params of normal cdf for annealing")
+tf.app.flags.DEFINE_float("kl_threshold", None,
+                           "Threshold with which to bound KL-Loss")
+tf.app.flags.DEFINE_float("input_dropout", 1,
+                           "How much dropout at input to add")
 
 def main(unused_argv=None):
   tf.logging.set_verbosity(FLAGS.log)
@@ -68,10 +88,10 @@ def main(unused_argv=None):
 
   if FLAGS.vae:
     config = utils.get_module("wavenet." + FLAGS.config).VAEConfig(
-        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric)
+        FLAGS.eval_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric, aux=FLAGS.aux_coefficient, dropout=FLAGS.input_dropout)
   else:
     config = utils.get_module("wavenet." + FLAGS.config).Config(
-        FLAGS.train_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric)
+        FLAGS.eval_path, sample_length=FLAGS.sample_length, problem=FLAGS.problem, small=FLAGS.small, asymmetric=FLAGS.asymmetric)
 
   logdir = FLAGS.logdir
   tf.logging.info("Saving to %s" % logdir)
@@ -87,7 +107,7 @@ def main(unused_argv=None):
       cpu_device = "/job:worker/cpu:0"
 
     with tf.device(cpu_device):
-      inputs_dict = config.get_batch(worker_batch_size)
+      inputs_dict = config.get_batch(worker_batch_size, is_training=False)
 
     with tf.device(
         tf.train.replica_device_setter(ps_tasks=FLAGS.ps_tasks,
@@ -99,68 +119,99 @@ def main(unused_argv=None):
           trainable=False)
 
       # build the model graph
-      outputs_dict = config.build(inputs_dict, is_training=True)
+      outputs_dict = config.build(inputs_dict, is_training=False)
 
       if FLAGS.vae:
-        dist = tfp.distributions.Normal(loc=FLAGS.annealing_loc, scale=FLAGS.annealing_scale)
-        annealing_rate = dist.cdf(tf.to_float(global_step)) # how to adjust the annealing
+        if FLAGS.kl_annealing:
+          dist = tfp.distributions.Normal(loc=FLAGS.annealing_loc, scale=FLAGS.annealing_scale)
+          annealing_rate = dist.cdf(tf.to_float(global_step)) # how to adjust the annealing
+        else:
+          annealing_rate = 0.
         kl = outputs_dict["loss"]["kl"]
         rec = outputs_dict["loss"]["rec"]
+        aux = outputs_dict["loss"]["aux"]
         tf.summary.scalar("kl", kl)
         tf.summary.scalar("rec", rec)
         tf.summary.scalar("annealing_rate", annealing_rate)
         if FLAGS.kl_threshold is not None:
           kl = tf.maximum(tf.cast(FLAGS.kl_threshold, dtype=kl.dtype), kl)
-        loss = rec + annealing_rate*kl
+        if FLAGS.aux_coefficient > 0:
+          tf.summary.scalar("aux", aux)
+        loss = rec + annealing_rate*kl + tf.cast(FLAGS.aux_coefficient, dtype=tf.float32)*aux
       else:
         loss = outputs_dict["loss"]
         
       tf.summary.scalar("train_loss", loss)
 
+      labels = inputs_dict["parameters"]
+      x_in = inputs_dict["wav"]
+      batch_size, _ = x_in.get_shape().as_list()
+      predictions = outputs_dict["predictions"]
+      _, pred_dim = predictions.get_shape().as_list()
+      predictions = tf.reshape(predictions, [batch_size, -1, pred_dim])
+      encodings = outputs_dict["encoding"]
 
-      worker_replicas = FLAGS.worker_replicas
 
       session_config = tf.ConfigProto(allow_soft_placement=True)
 
-      is_chief = (FLAGS.task == 0)
-      local_init_op = opt.chief_init_op if is_chief else opt.local_step_init_op
+      # Define the metrics:
+      if FLAGS.vae:
+        names_to_values, names_to_updates = slim.metrics.aggregate_metric_map({
+            'eval/kl': slim.metrics.streaming_mean(kl),
+            'eval/rec': slim.metrics.streaming_mean(rec),
+            'eval/loss': slim.metrics.streaming_mean(loss),
+            'eval/predictions': slim.metrics.streaming_concat(predictions),
+            'eval/labels': slim.metrics.streaming_concat(labels),
+            'eval/encodings': slim.metrics.streaming_concat(encodings),
+            'eval/audio': slim.metrics.streaming_concat(x_in)
+        })
+      else:
+        names_to_values, names_to_updates = slim.metrics.aggregate_metric_map({
+            'eval/loss': slim.metrics.streaming_mean(loss),
+            'eval/predictions': slim.metrics.streaming_concat(predictions),
+            'eval/labels': slim.metrics.streaming_concat(labels),
+            'eval/encodings': slim.metrics.streaming_concat(encodings),
+            'eval/audio': slim.metrics.streaming_concat(x_in)
+        })
 
-      # Create the summary ops such that they also print out to std output:
-      summary_ops = []
-      for metric_name, metric_value in names_to_values.iteritems():
-        op = tf.summary.scalar(metric_name, metric_value)
-        op = tf.Print(op, [metric_value], metric_name)
-        summary_ops.append(op)
-
-      num_examples = 10000
-      batch_size = 32
-      num_batches = math.ceil(num_examples / float(batch_size))
-
-      # Setup the global step.
-      slim.get_or_create_global_step()
-
-      output_dir = ... # Where the summaries are stored.
-      eval_interval_secs = ... # How often to run the evaluation.
-      slim.evaluation.evaluation_loop(
-          'local',
-          checkpoint_dir,
-          log_dir,
-          num_evals=num_batches,
-          eval_op=names_to_updates.values(),
-          summary_op=tf.summary.merge(summary_ops),
-          eval_interval_secs=eval_interval_secs)
-
-      slim.evaluation.evaluation_loop(
-          train_op=train_op,
-          logdir=logdir,
-          num_evals=num_batches,
+      print('Running evaluation Loop...')
+      if FLAGS.checkpoint_path is not None:
+        checkpoint_path = FLAGS.checkpoint_path
+      else:
+        checkpoint_path = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+      metric_values = slim.evaluation.evaluate_once(
+          num_evals=FLAGS.num_evals,
           master=FLAGS.master,
-          number_of_steps=config.num_iters,
-          global_step=global_step,
-          log_every_n_steps=250,
-          local_init_op=local_init_op,
-          session_config=session_config,)
+          checkpoint_path=checkpoint_path,
+          logdir=FLAGS.logdir,
+          eval_op=names_to_updates.values(),
+          final_op=names_to_values.values(),
+          session_config=session_config)
+
+      names_to_values = dict(zip(names_to_values.keys(), metric_values))
+
+      losses = {}
+      for k, v in names_to_values.items():
+        name = k.split('/')[-1]
+        if name in ['predictions', 'encodings', 'labels', 'audio']:
+          outpath = os.path.join(FLAGS.logdir, name)
+          if name == 'predictions':
+            v = np.argmax(v, axis = -1)
+            v = utils.inv_mu_law_numpy(v - 128)
+          np.save(outpath, v)
+        else:
+          losses[name] = v
+
+      outpath_loss = os.path.join(FLAGS.logdir, 'losses.pickle')
+      with open(outpath_loss, 'w') as w:
+        pickle.dump(losses, w)
+
+
+
+
+def console_entry_point():
+  tf.app.run(main)
 
 
 if __name__ == "__main__":
-  tf.app.run()
+  console_entry_point()

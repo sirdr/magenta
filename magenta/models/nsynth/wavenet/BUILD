@@ -114,6 +114,22 @@ py_binary(
 )
 
 py_binary(
+    name = "eval",
+    srcs = [
+        "eval.py",
+    ],
+    srcs_version = "PY2AND3",
+    deps = [
+        ":configs",
+        "//magenta/models/nsynth:utils",
+        # numpy dep
+        # tensorflow dep
+        # json dep
+        # os dep
+    ],
+)
+
+py_binary(
     name = "nsynth_save_embeddings",
     srcs = [
         "nsynth_save_embeddings.py",

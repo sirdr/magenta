@@ -73,6 +73,7 @@ class NSynthDataset(object):
     elif self.problem=='dx7':
       features = {
           "audio": tf.FixedLenFeature([self.sample_length], dtype=tf.float32),
+          "parameters": tf.FixedLenFeature([4], dtype=tf.float32)
       }
 
     example = tf.parse_single_example(serialized_example, features)
@@ -95,6 +96,8 @@ class NSynthDataset(object):
     if self.problem=='nsynth':
       pitch = tf.squeeze(example["pitch"])
       key = tf.squeeze(example["note_str"])
+    elif self.problem == 'dx7':
+      parameters = tf.squeeze(example["parameters"])
 
     if self.is_training:
       # random crop
@@ -108,8 +111,8 @@ class NSynthDataset(object):
             capacity=500 * batch_size,
             min_after_dequeue=200 * batch_size)
       elif self.problem=='dx7':
-        crop= tf.train.shuffle_batch(
-            [crop],
+        crop, parameters= tf.train.shuffle_batch(
+            [crop, parameters],
             batch_size,
             num_threads=4,
             capacity=500 * batch_size,
@@ -127,8 +130,8 @@ class NSynthDataset(object):
             capacity=500 * batch_size,
             min_after_dequeue=200 * batch_size)
       elif self.problem=='dx7':
-        crop= tf.train.shuffle_batch(
-            [crop],
+        crop, parameters = tf.train.shuffle_batch(
+            [crop, parameters],
             batch_size,
             num_threads=4,
             capacity=500 * batch_size,
@@ -139,7 +142,7 @@ class NSynthDataset(object):
       pitch = tf.cast(pitch, tf.int32)
       return {"pitch": pitch, "wav": crop, "key": key}
     elif self.problem=='dx7':
-      return {"wav": crop}
+      return {"wav": crop, "parameters": parameters}
     else:
       pitch = tf.cast(pitch, tf.int32)
       return {"pitch": pitch, "wav": crop, "key": key}

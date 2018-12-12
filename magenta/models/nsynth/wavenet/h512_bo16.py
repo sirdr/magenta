@@ -188,7 +188,7 @@ class Config(object):
         self.ae_num_layers = 30
 
 
-  def get_batch(self, batch_size):
+  def get_batch(self, batch_size, is_training=True):
     assert self.train_path is not None
     data_train = reader.NSynthDataset(self.train_path, sample_length=self.sample_length, problem=self.problem, is_training=True)
     return data_train.get_wavenet_batch(batch_size, length=6144)
