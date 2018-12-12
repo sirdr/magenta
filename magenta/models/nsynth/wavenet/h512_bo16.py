@@ -33,13 +33,13 @@ class FastGenerationConfig(object):
     self.batch_size = batch_size
     if small:
       self.num_stages = 10
-      if asymmetric:
+      if asymmetric==1:
         self.num_layers = 5
       else:
         self.num_layers = 10
     else:
       self.num_stages = 10
-      if asymmetric:
+      if asymmetric==1:
         self.num_layers = 25
       else:
         self.num_layers = 30
@@ -171,18 +171,24 @@ class Config(object):
     if small:
       self.num_stages = 10
       self.ae_num_stages = 10
-      if asymmetric:
+      if asymmetric==1:
         self.num_layers = 5
         self.ae_num_layers = 15
+      elif asymmetric==2:
+        self.num_layers = 2
+        self.ae_num_layers = 18
       else:
         self.num_layers = 10
         self.ae_num_layers = 10
     else:
       self.num_stages = 10
       self.ae_num_stages = 10
-      if asymmetric:
+      if asymmetric==1:
         self.num_layers = 25
         self.ae_num_layers = 35
+      elif asymmetric==2:
+        self.num_layers = 20
+        self.ae_num_layers = 40
       else:
         self.num_layers = 30
         self.ae_num_layers = 30
@@ -413,13 +419,13 @@ class VAEConfig(Config):
       the 'quantized_input', and whatever metrics we want to track for eval.
     """
     del is_training
-    num_stages = 10
-    num_layers = 10
+    num_stages = self.num_stages
+    num_layers = self.num_layers
     filter_length = 3
     width = 512
     skip_width = 256
-    ae_num_stages = 10
-    ae_num_layers = 10
+    ae_num_stages = self.ae_num_stages
+    ae_num_layers = self.ae_num_layers
     ae_filter_length = 3
     ae_width = 128
 
