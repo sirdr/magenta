@@ -191,19 +191,21 @@ def main(unused_argv=None):
       names_to_values = dict(zip(names_to_values.keys(), metric_values))
 
       losses = {}
+      data_name = FLAGS.eval_path.split('/')[-1].split('.')[0]
+      outpath = os.path.join(FLAGS.logdir, data_name)
       for k, v in names_to_values.items():
         name = k.split('/')[-1]
         if name in ['predictions', 'encodings', 'labels', 'audio']:
-          outpath = os.path.join(FLAGS.logdir, name)
+          out = outpath+'-{}'.format(name)
           if name == 'predictions':
             v = np.argmax(v, axis = -1)
             v = utils.inv_mu_law_numpy(v - 128)
-          np.save(outpath, v)
+          np.save(out, v)
         else:
           losses[name] = v
 
-      outpath_loss = os.path.join(FLAGS.logdir, 'losses.pickle')
-      with open(outpath_loss, 'w') as w:
+      out_loss = outpath+'-losses.pickle'
+      with open(out_loss, 'w') as w:
         pickle.dump(losses, w)
 
 
