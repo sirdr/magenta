@@ -65,7 +65,7 @@ tf.app.flags.DEFINE_bool("vae", False,
                            "Whether or not to train variationally")
 tf.app.flags.DEFINE_bool("small", False,
                            "Whether to use full model i.e. 30 layers in decoder/encoder or reduced model")
-tf.app.flags.DEFINE_bool("asymmetric", False,
+tf.app.flags.DEFINE_integer("asymmetric", 0,
                            "Whether to have equal number of layers in decoder/encoder or a weaker decoder")
 tf.app.flags.DEFINE_bool("kl_annealing", False,
                            "Whether to use kl_annealing")
