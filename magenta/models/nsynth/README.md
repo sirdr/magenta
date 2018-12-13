@@ -1,13 +1,9 @@
 
 # Contributions of this Fork
+Modified Scripts:
 ```diff
-+ Training of WaveNet autoencoder variationally using gaussian prior
++ wavenet
 ```
-Activate with `--vae=True`.
-```diff
-+ Optional KL annealing
-```
-Activate with `--kl_annealing=True`.
 # NSynth: Neural Audio Synthesis
 
 NSynth is a WaveNet-based autoencoder for synthesizing audio.
