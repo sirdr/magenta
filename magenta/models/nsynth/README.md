@@ -2,7 +2,15 @@
 # Contributions of this Fork
 Modified Scripts:
 ```diff
-+ wavenet
++ wavenet/train.py
++ wavenet/h512_bo16.py
++ wavenet/fastgen.py
++ wavenet/nsynth_generate.py
++ reader.py
+```
+New Scripts:
+```diff
++ wavenet/eval.py
 ```
 # NSynth: Neural Audio Synthesis
 
