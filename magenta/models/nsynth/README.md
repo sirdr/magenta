@@ -1,5 +1,6 @@
 
-# Contributions of this Fork
+# Contributions of this Fork:
+This fork of ```nsynth``` adds a Variational Training configuration to the orginal deterministic WaveNet Autoencoder.
 Modified Scripts:
 ```diff
 + wavenet/train.py
